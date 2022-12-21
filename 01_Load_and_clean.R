@@ -42,6 +42,7 @@ output <- case_when(
     grepl("telemetry", x, ignore.case = TRUE) ~ "Telemetry",
     grepl("transect", x, ignore.case = TRUE) ~ "Inventory",
     grepl("inventory", x, ignore.case = TRUE) ~ "Inventory",
+    grepl("capture", x, ignore.case = TRUE) ~ "Capture",
     TRUE ~ "Other")
 return(output)
 }
@@ -89,7 +90,7 @@ exp.tmp$subunit <- name_fixer(exp.tmp$subunit)
 exp.tmp <- exp.tmp %>%
   filter(survey.type == "Telemetry" | survey.type == "Inventory")
 
-# Option 1
+# Separate collar observations from non-collar
 exp.tmp <- exp.tmp %>%
   mutate(collar =
            case_when(
@@ -137,17 +138,22 @@ eff.2022 <- area.2022 %>%
 setdiff(bind_rows(eff.2021, eff.2022)$Unit, EPU.list) # Names match
 
 # Check that all EPUs in eff have sightability data in exp
-setdiff(eff.2021$Unit, exp.tmp$subunit[exp.tmp$Year==2021]) # No exp for mcnab ->
-eff.2021 <- eff.2021 %>%
-  filter(Unit != "McNab")
-
-setdiff(eff.2022$Unit, exp.tmp$subunit[exp.tmp$Year==2022]) # No exp for Brittain, Tzoonie ->
-eff.2022 <- eff.2022 %>%
-  filter(Unit != "Brittain",
-         Unit != "Tzoonie-Narrows")
+# setdiff(eff.2021$Unit, exp.tmp$subunit[exp.tmp$Year==2021]) # No exp for mcnab ->
+# eff.2021 <- eff.2021 %>%
+#   filter(Unit != "McNab")
+# 
+# setdiff(eff.2022$Unit, exp.tmp$subunit[exp.tmp$Year==2022]) # No exp for Brittain, Tzoonie ->
+# eff.2022 <- eff.2022 %>%
+#   filter(Unit != "Brittain",
+#          Unit != "Tzoonie-Narrows")
 
 eff <- bind_rows(eff.2021, eff.2022)
-eff$ID <- as.integer(row.names(eff))
+
+# Amend EPU.list to only include surveyed EPUs
+EPU.list <- data.frame(Unit = unique(eff$Unit)) %>%
+  mutate(ID = seq(1,length(Unit),1))
+
+eff <- left_join(eff, EPU.list, by="Unit")
 
 sampinfo <- left_join(eff, EPU.areas, by="Unit") %>%
   mutate(stratum = ID, 
@@ -185,7 +191,7 @@ obs.2021 <- dat.2021 %>%
     survey.type = `Survey type`,
     date = Date
   ) %>%
-  filter(subunit %in% eff$Unit[eff$year == 2021])
+    filter(subunit %in% eff$Unit[eff$year == 2021])
 
 obs.2021$survey.type <- standard_survey(obs.2021$survey.type)
 
@@ -216,17 +222,17 @@ obs.2022 <- dat.2022 %>%
     survey.type = `Survey type`,
     date = Date
   ) %>%
-  filter(subunit %in% eff$Unit[eff$year == 2022])
+filter(subunit %in% eff$Unit[eff$year == 2022])
 obs.2022$survey.type <- standard_survey(obs.2022$survey.type)
 
 
-# bind together & only keep inventory
+# bind together & only keep inventory & capture surveys
 obs.inv <- bind_rows(obs.2021, obs.2022) %>%
-  filter(survey.type=="Inventory") %>%
+  filter(survey.type=="Inventory" | survey.type=="Capture") %>%
   select(-survey.type)
 
 # stratum field
-obs <- left_join(obs.inv, eff %>% select(Unit, ID), by=c("subunit"="Unit")) %>%
+obs <- inner_join(obs.inv, EPU.list, by=c("subunit"="Unit")) %>%
   mutate(stratum = as.integer(ID), .keep = "unused") %>%
   filter(!is.na(stratum))
 

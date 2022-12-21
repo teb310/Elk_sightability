@@ -27,13 +27,13 @@ standard <- standard %>%
 
 ## Clean output ####
 # Combine dataframes
-mHT <- bind_rows(mHT_y1 %>% mutate(year = 1), mHT_y2 %>% mutate(year = 2))
+mHT <- bind_rows(mHT_2021 %>% mutate(year = 1), mHT_2022 %>% mutate(year = 2))
 
 ## CV stats ####
 mHT.cv <- matrix(NA, 2, 3)
 mHT.cv[,1] <- c(2021, 2022)
-mHT.cv[,2] <- c(median(mHT_y1$cv), median(mHT_y2$cv))
-mHT.cv[,3] <- c(mean(mHT_y1$cv), mean(mHT_y2$cv))
+mHT.cv[,2] <- c(median(mHT_2021$cv), median(mHT_2022$cv))
+mHT.cv[,3] <- c(mean(mHT_2021$cv), mean(mHT_2022$cv))
 
 colnames(mHT.cv) <- c("year", "median_cv", "mean_cv")
 mHT.cv <- as.data.frame(mHT.cv)
@@ -49,8 +49,8 @@ jags.summary <- as.data.frame(jags_output$BUGSoutput$summary)
 
 tau.jags <- matrix(NA,(nrow(jags.summary)-3),9)
 tau.jags <- as.data.frame(tau.jags)
-tau.jags[,1] <- as.numeric(str_extract(colnames(scalar.dat)[1:length(jags_output$BUGSoutput$median$tau.hat)], "(?<=h)[:digit:]{1,2}")) %>% sort()
-tau.jags[,2] <- as.numeric(str_extract(colnames(scalar.dat)[1:length(jags_output$BUGSoutput$median$tau.hat)], "(?<=y)[:digit:]{1,2}")) %>% sort()
+tau.jags[,1] <- as.numeric(str_extract(colnames(scalar.dat)[1:length(jags_output$BUGSoutput$median$tau.hat)], "(?<=h)[:digit:]{1,2}"))
+tau.jags[,2] <- as.numeric(str_extract(colnames(scalar.dat)[1:length(jags_output$BUGSoutput$median$tau.hat)], "(?<=y)[:digit:]{1,2}"))
 tau.jags[,3] <- round(jags.summary$`50%`[4:nrow(jags.summary)])
 tau.jags[,4] <- round(jags.summary$`2.5%`[4:nrow(jags.summary)])
 tau.jags[,5] <- round(jags.summary$`97.5%`[4:nrow(jags.summary)])
@@ -59,24 +59,22 @@ tau.jags[,7] <- round(jags.summary$`75%`[4:nrow(jags.summary)])
 tau.jags[,8] <- round(jags.summary$Rhat[4:nrow(jags.summary)], 3)
 tau.jags[,9] <- round(jags.summary$sd[4:nrow(jags.summary)]/jags.summary$`50%`[4:nrow(jags.summary)], 3)
 
-colnames(tau.jags) <- c("ID", "year", "tau.hat","lcl_95", "ucl_95", "lcl_50", "ucl_50", "Rhat", "cv")
-tau.jags <- left_join(tau.jags, eff[,c(1,5)], by="ID") %>%
+colnames(tau.jags) <- c("ID", "year", "tau.hat","lcl_95", "ucl_95", "lcl_50", "ucl_50", "Rhat", "cv") 
+tau.jags <- tau.jags %>%
+  mutate(year = if_else(year == 1, 2021, 2022)) %>%
+  left_join(eff[,c(1,4:5)], by=c("ID", "year")) %>%
   select(EPU = Unit, year:cv) %>%
   arrange(EPU, year)
 
-
-# library(writexl)
-# write_xlsx(tau.jags, "tau.jags.xlsx")
-
-tau.jags_y1 <- tau.jags %>% filter(year == 1) %>% select(-c(year, Rhat))
-tau.jags_y2 <- tau.jags %>% filter(year == 2) %>% select(-c(year, Rhat))
+tau.jags_y1 <- tau.jags %>% filter(year == 2021) %>% select(-c(year, Rhat))
+tau.jags_y2 <- tau.jags %>% filter(year == 2022) %>% select(-c(year, Rhat))
 
 ## CV stats ####
 
 jags.cv <- matrix(NA, 2, 3)
 jags.cv[,1] <- c(2021, 2022)
-jags.cv[,2] <- c(median(tau.jags$cv[tau.jags$year == 1]), median(tau.jags$cv[tau.jags$year == 2]))
-jags.cv[,3] <- c(mean(tau.jags$cv[tau.jags$year == 1]), mean(tau.jags$cv[tau.jags$year == 2]))
+jags.cv[,2] <- c(median(tau.jags$cv[tau.jags$year == 2021]), median(tau.jags$cv[tau.jags$year == 2022]))
+jags.cv[,3] <- c(mean(tau.jags$cv[tau.jags$year == 2021]), mean(tau.jags$cv[tau.jags$year == 2022]))
 colnames(jags.cv) <- c("year", "median_cv", "mean_cv")
 jags.cv <- as.data.frame(jags.cv)
 
@@ -86,8 +84,8 @@ jags.cv <- as.data.frame(jags.cv)
 
 ## 2021 ####
 
-mHT_y1 <- mHT_y1 %>%
-  select(EPU, tau.hat:ucl_95, cv:ucl_50) %>%
+mHT_y1 <- mHT_2021 %>%
+  select(-c(VarTot:VarMod)) %>%
   mutate(model = "mHT")
 jags_y1 <- tau.jags_y1 %>%
   mutate(model = "Bayesian")
@@ -102,8 +100,8 @@ row.names(results_y1) <- 1:nrow(results_y1)
 
 ## 2022 ####
 
-mHT_y2 <- mHT_y2 %>%
-  select(EPU, tau.hat:ucl_95, cv:ucl_50) %>%
+mHT_y2 <- mHT_2022 %>%
+  select(-c(VarTot:VarMod)) %>%
   mutate(model = "mHT")
 jags_y2 <- tau.jags_y2 %>%
   mutate(model = "Bayesian")
@@ -159,8 +157,8 @@ results_final <- bind_rows(results_y1, results_y2) %>%
                          paste(lcl_95, ucl_95, sep = ", ")),
          CI_50 = if_else(is.na(lcl_50), as.character(NA),
                          paste(lcl_50, ucl_50, sep = ", "))) %>%
-  select(EPU, year, model, tau.hat, CI_95, CI_50, cv) # %>%
-  # write.csv("Results_final.csv", row.names = F)
+  select(EPU, year, model, tau.hat, CI_95, CI_50, cv) %>%
+  write.csv("Results_final.csv", row.names = F)
 
 ## Agreement: mHT vs. Bayesian vs. Standard ####
 
@@ -169,7 +167,7 @@ results_final <- bind_rows(results_y1, results_y2) %>%
 agree.mB = agree_test(x = tau_transposed$mHT,
                       y = tau_transposed$Bayesian, 
                       delta = 1)
-print(agree.mB) # 68%
+print(agree.mB) # 70%
 agree.mB_plot = plot(agree.mB) +
   scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
 agree.mB_plot
@@ -180,7 +178,7 @@ agree.mB_plot
 agree.mS = agree_test(x = tau_transposed$mHT,
                       y = tau_transposed$Standard, 
                       delta = 1)
-print(agree.mS) # 49%
+print(agree.mS) # 52%
 agree.mS_plot = plot(agree.mS) +
   scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
 agree.mS_plot
@@ -191,7 +189,7 @@ agree.mS_plot
 agree.BS = agree_test(x = tau_transposed$Bayesian,
                       y = tau_transposed$Standard, 
                       delta = 1)
-print(agree.BS) # 77%
+print(agree.BS) # 76%
 agree.BS_plot = plot(agree.BS) +
   scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
 agree.BS_plot
@@ -204,13 +202,13 @@ Agreement[3,] <- c("Bayesian vs. Standard", agree.BS$ccc.xy[1])
 
 colnames(Agreement) <- c("Test", "CCC")
 
-# write.csv(Agreement,"Agreement.csv", row.names = FALSE)
+write.csv(Agreement,"Agreement.csv", row.names = FALSE)
 
 
 ## CV stats ####
 cv.all <- bind_rows("mHT" = mHT.cv, "Bayesian" = jags.cv, .id = "Model") %>%
   arrange(year)
-# write.csv(cv.all, "CV.csv", row.names = F)
+write.csv(cv.all, "CV.csv", row.names = F)
 
 # PLOT RESULTS ####
 
@@ -218,7 +216,7 @@ cv.all <- bind_rows("mHT" = mHT.cv, "Bayesian" = jags.cv, .id = "Model") %>%
 results_plot1 = ggplot(results_y1, aes(x = EPU, y=tau.hat, fill=model))+
   geom_linerange(aes(EPU, ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.7)) +
   geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.7) ) +
-  geom_point(shape=21, size=3, position = position_dodge(width = 0.7))+
+  geom_point(shape=21, size=2.5, position = position_dodge(width = 0.7))+
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
         panel.background = element_blank(), axis.line = element_line(colour = "black")) +
   scale_y_continuous("Population Estimate") +
@@ -228,7 +226,7 @@ results_plot1 = ggplot(results_y1, aes(x = EPU, y=tau.hat, fill=model))+
 # For palette choices: 
 #   RColorBrewer::display.brewer.all()
 results_plot1
-ggsave("Results_2021.jpeg")
+ggsave("Results_2021.jpeg", width = 9, height = 5, units="in")
 
 # Bayesian and Standard only
 results_BS_plot1 = ggplot(results_y1[results_y1$model != "mHT",], aes(x = EPU, y=tau.hat, fill=model))+
@@ -244,7 +242,7 @@ results_BS_plot1 = ggplot(results_y1[results_y1$model != "mHT",], aes(x = EPU, y
 # For palette choices: 
 #   RColorBrewer::display.brewer.all()
 results_BS_plot1
-ggsave("Results_BS_2021.jpeg")
+ggsave("Results_BS_2021.jpeg",width = 9, height = 5, units="in")
 
 ## 2022 ####
 results_plot2 = ggplot(results_y2, aes(x = EPU, y=tau.hat, fill=model))+
@@ -260,7 +258,7 @@ results_plot2 = ggplot(results_y2, aes(x = EPU, y=tau.hat, fill=model))+
 # For palette choices: 
 #   RColorBrewer::display.brewer.all()
 results_plot2
-ggsave("Results_2022.jpeg")
+ggsave("Results_2022.jpeg", width = 9, height = 5, units="in")
 
 # Bayesian and Standard only
 results_BS_plot2 = ggplot(results_y2[results_y2$model != "mHT",], aes(x = EPU, y=tau.hat, fill=model))+
@@ -276,7 +274,7 @@ results_BS_plot2 = ggplot(results_y2[results_y2$model != "mHT",], aes(x = EPU, y
 # For palette choices: 
 #   RColorBrewer::display.brewer.all()
 results_BS_plot2
-ggsave("Results_BS_2022.jpeg")
+ggsave("Results_BS_2022.jpeg", width = 9, height = 5, units="in")
   
 # # Check Distributions ###
 # 

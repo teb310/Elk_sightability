@@ -8,43 +8,43 @@ model
         z.tilde[i] ~ dbern(g.tilde[i])
     }
     for (j in 1:2) {
-        for (i in 1:20) {
+        for (i in 1:21) {
             alpha.voc[i, j] ~ dgamma(1, 0.01)
             beta.voc[i, j] ~ dgamma(1, 0.01)
         }
     }
-    for (j in 1:Ngroups) {
-        x[j] ~ dbeta(alpha.voc[h[j], yr[j]], beta.voc[h[j], yr[j]])  
+    for (k in 1:Ngroups) {
+        x[k] ~ dbeta(alpha.voc[h[k], yr[k]], beta.voc[h[k], yr[k]])  
             T(0.00000E+00, 0.999)
     }
-    for (k in 1:2) {
-        for (i in 1:20) {
-            loglam[i, k] ~ dnorm(0.00000E+00, 0.1)  T(-10, 10)
-            lam[i, k] <- exp(loglam[i, k])
+    for (m in 1:2) {
+        for (p in 1:21) {
+            loglam[p, m] ~ dnorm(0.00000E+00, 0.1)  T(-10, 10)
+            lam[p, m] <- exp(loglam[p, m])
         }
     }
-    for (k in 1:2) {
-        for (i in 1:20) {
-            a[i, k] ~ dgamma(1, 0.01)
-            b[i, k] ~ dgamma(1, 0.01)
+    for (q in 1:2) {
+        for (r in 1:21) {
+            a[r, q] ~ dgamma(1, 0.01)
+            b[r, q] ~ dgamma(1, 0.01)
         }
     }
-    for (i in 1:Nsubunits.yr) {
-        psi[i] ~ dbeta(a[h.plots[i], yr.plots[i]], b[h.plots[i], 
-            yr.plots[i]])  T(1.00000E-04, 0.99)
+    for (s in 1:Nsubunits.yr) {
+        psi[s] ~ dbeta(a[h.plots[s], yr.plots[s]], b[h.plots[s], 
+            yr.plots[s]])  T(1.00000E-04, 0.99)
     }
-    for (i in 1:Ngroups) {
-        q[i] ~ dbin(psi[subunits[i]], 1)
-        g[i] <- exp(bo + bvoc * x[i])/(1 + exp(bo + bvoc * x[i]))
-        pseen[i] <- q[i] * g[i]
-        z[i] ~ dbin(pseen[i], 1)
-        ym1[i] ~ dpois(lam[h[i], yr[i]])
-        y[i] <- ym1[i] + 1
-        taus[i] <- q[i] * y[i]
+    for (t in 1:Ngroups) {
+        q[t] ~ dbin(psi[subunits[t]], 1)
+        g[t] <- exp(bo + bvoc * x[t])/(1 + exp(bo + bvoc * x[t]))
+        pseen[t] <- q[t] * g[t]
+        z[t] ~ dbin(pseen[t], 1)
+        ym1[t] ~ dpois(lam[h[t], yr[t]])
+        y[t] <- ym1[t] + 1
+        taus[t] <- q[t] * y[t]
     }
-for (i in 1:Nsubunits.yr) {
-t[i] <- scalars[i,1]
-d[i] <- scalars[i,2]
-tau.hat[i] <- sum(taus[c(t[i]:d[i])])
+for (u in 1:Nsubunits.yr) {
+t[u] <- scalars[u,1]
+d[u] <- scalars[u,2]
+tau.hat[u] <- sum(taus[c(t[u]:d[u])])
 }
 }

@@ -76,3 +76,4 @@ input/Effort/areas_2022_INV.csv
 out/Results_final.csv
 out/Results_BS_2022.jpeg
 out/Results_BS_2021.jpeg
+*.csv
