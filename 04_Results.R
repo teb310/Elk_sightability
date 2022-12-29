@@ -10,40 +10,51 @@ if(length(new.packages)) install.packages(new.packages)
 lapply(list.of.packages, require, character.only = TRUE)
 
 # LOAD DATA ####
-setwd("C:/Users/TBRUSH/R/Elk_sightability/out")
+# Get inputs
+setwd("C:/Users/TBRUSH/R/SightabilityModels/input")
+load("other_inputs.rdata")
 
-load("jags_output.RData")
-load("mHT_output.RData")
-standard <- read_excel("C:/Users/TBRUSH/R/Elk_sightability/input/SurveyData_ SPRING_2022.xls", 
-                          sheet = "2022 Summary", range = "A2:AH29")
+# Get summary data (i.e. standard estimates) from your excel file
+standard <- compile_sheets(file, "Summary") %>%
+  rename(Standard = estimate)
 
-# Expert estimates ####
+# Get model outputs
+setwd(output)
 
-standard <- standard %>%
-  select(EPU=`...1`, y1=`Est., Population April 2021`, y2=`Est., Population April 2022`) %>%
-  arrange(EPU)
+# jags output already includes all years
+load("jags_output.rdata")
 
-# mHT ####
+# UNCOMMENT BELOW IF YOU WANT TO INCLUDE mHT ESTIMATES
+# # for mHT, first get list of mHT outputs in output folder
+# mHT_files <- list.files(pattern = "mHT") 
+# mHT_files <- subset(mHT_files, str_detect(mHT_files, ".rdata")==T)
+# 
+# # then load in all mHT output files
+# load(mHT_files[1])
+# mHT_output <- results %>%
+#   rename(mHT = tau.hat,
+#          mHT_lcl_50 = lcl_50,
+#          mHT_ucl_50 = ucl_50,
+#          mHT_lcl_95 = lcl_95,
+#          mHT_ucl_95 = ucl_95)
+# 
+# # run below if length(mHT_files) > 1
+# for(i in 2:length(mHT_files))
+# {
+#   load(mHT_files[i])
+#   results <- results %>% rename(mHT = tau.hat,
+#                                 mHT_lcl_50 = lcl_50,
+#                                 mHT_ucl_50 = ucl_50,
+#                                 mHT_lcl_95 = lcl_95,
+#                                 mHT_ucl_95 = ucl_95)
+#   mHT_output <- bind_rows(mHT_output, results)
+#   rm("results")
+# }
 
-## Clean output ####
-# Combine dataframes
-mHT <- bind_rows(mHT_2021 %>% mutate(year = 1), mHT_2022 %>% mutate(year = 2))
 
-## CV stats ####
-mHT.cv <- matrix(NA, 2, 3)
-mHT.cv[,1] <- c(2021, 2022)
-mHT.cv[,2] <- c(median(mHT_2021$cv), median(mHT_2022$cv))
-mHT.cv[,3] <- c(mean(mHT_2021$cv), mean(mHT_2022$cv))
+# CLEAN ####
 
-colnames(mHT.cv) <- c("year", "median_cv", "mean_cv")
-mHT.cv <- as.data.frame(mHT.cv)
-
-
-# JAGS ####
-
-load("jags_effort.RData")
-
-## Clean output ####
+## Bayesian ####
 
 jags.summary <- as.data.frame(jags_output$BUGSoutput$summary)
 
@@ -59,135 +70,154 @@ tau.jags[,7] <- round(jags.summary$`75%`[4:nrow(jags.summary)])
 tau.jags[,8] <- round(jags.summary$Rhat[4:nrow(jags.summary)], 3)
 tau.jags[,9] <- round(jags.summary$sd[4:nrow(jags.summary)]/jags.summary$`50%`[4:nrow(jags.summary)], 3)
 
-colnames(tau.jags) <- c("ID", "year", "tau.hat","lcl_95", "ucl_95", "lcl_50", "ucl_50", "Rhat", "cv") 
-tau.jags <- tau.jags %>%
-  mutate(year = if_else(year == 1, 2021, 2022)) %>%
-  left_join(eff[,c(1,4:5)], by=c("ID", "year")) %>%
-  select(EPU = Unit, year:cv) %>%
-  arrange(EPU, year)
+rm(jags_output)
 
-tau.jags_y1 <- tau.jags %>% filter(year == 2021) %>% select(-c(year, Rhat))
-tau.jags_y2 <- tau.jags %>% filter(year == 2022) %>% select(-c(year, Rhat))
+colnames(tau.jags) <- c("ID", "year.ID", "JAGS","JAGS_lcl_95", "JAGS_ucl_95", "JAGS_lcl_50", "JAGS_ucl_50", "Rhat", "cv") 
+jags_output <- left_join(tau.jags, year.ID, by="year.ID") %>%
+  left_join(EPU.list, by="ID") %>%
+  select(-year.ID, -ID)
 
-## CV stats ####
+# COMBINE ####
 
-jags.cv <- matrix(NA, 2, 3)
-jags.cv[,1] <- c(2021, 2022)
-jags.cv[,2] <- c(median(tau.jags$cv[tau.jags$year == 2021]), median(tau.jags$cv[tau.jags$year == 2022]))
-jags.cv[,3] <- c(mean(tau.jags$cv[tau.jags$year == 2021]), mean(tau.jags$cv[tau.jags$year == 2022]))
-colnames(jags.cv) <- c("year", "median_cv", "mean_cv")
-jags.cv <- as.data.frame(jags.cv)
+# create a dataframe that combines the important elements of all dataframes
+results.all <- left_join(jags_output %>% select(year, EPU, JAGS, JAGS_lcl_95, JAGS_ucl_9, JAGS_lcl_50, JAGS_ucl_50),
+                         standard, 
+                         by=c("EPU", "year"))
+
+# UNCOMMENT BELOW IF YOU'RE INCLUDING mHT ESTIMATES
+# results.all <- left_join(results.all,
+#                          mHT_output %>% select(year, EPU, mHT, mHT_lcl_50, mHT_ucl_50, mHT_lcl_95, mHT_ucl_95),
+#                          by=c("EPU", "year"))
+
+# uncomment any commented sections below if you're including mHT estimates
+results.long <- pivot_longer(results.all,
+                             c(JAGS,
+                               # mHT,
+                               Standard),
+                             names_to = "model",
+                             values_to = "estimate") %>%
+  mutate(lcl_50 =
+           # if_else(model=="mHT", mHT_lcl_50,
+           if_else(model == "JAGS", JAGS_lcl_50, as.double(NA))) %>%
+# ) %>%
+
+  mutate(ucl_50 =
+           # if_else(model=="mHT", mHT_ucl_50,
+           if_else(model == "JAGS", JAGS_ucl_50, as.double(NA))) %>%
+# ) %>%
+  mutate(lcl_95 =
+           # if_else(model=="mHT", mHT_lcl_95,
+           if_else(model == "JAGS", JAGS_lcl_95, as.double(NA))) %>%
+  # ) %>%
+  
+  mutate(ucl_95 =
+           # if_else(model=="mHT", mHT_ucl_95,
+           if_else(model == "JAGS", JAGS_ucl_95, as.double(NA))) %>%
+  # ) %>%
+  select(-JAGS_lcl_50,-JAGS_ucl_50, -JAGS_lcl_95,-JAGS_ucl_95)
+# %>% select(-mHT_lcl_50, -mHT_ucl_50, -mHT_lcl_95, -mHT_ucl_95)
+
+write.csv(results.all, "Results_wide.csv", row.names = F)
+write.csv(results.long, "Results_long.csv", row.names = F)
+
+# FIGURES ####
+
+setwd(output)
+
+## By year ####
+# One figure per year, showing all EPUs
+
+results_by_year = ggplot(results.long, aes(x = EPU, y=estimate, fill=model))+
+  # add in confidence intervals as dotted lines
+  geom_linerange(aes(EPU, ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.7)) +
+  # uncomment the line below if you want 50% confidence intervals as well
+  # geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.7) ) +
+  # add in point estimates
+  geom_point(shape=21, size=2.5, position = position_dodge(width = 0.7))+
+  # set theme elements
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(axis.text.x=element_text(size=10, angle = 90, vjust = .4)) +
+  theme(axis.text.y = element_text(size=11)) +
+  # set y axis title
+  scale_y_continuous("Population Estimate") +  
+  # use greyscale for fill colors
+  scale_fill_grey(start = 0, end = 1) +
+  # create a new graph for each year
+  facet_wrap(vars(year), scales="free")
+
+# view
+results_by_year
+# save
+ggsave("Elk_estimates_yearly.jpeg", width = 20, height = 6, units="in")
 
 
-# COMBINE RESULTS ####
+## By EPU ####
+# One figure per EPU, showing all years
+
+results_by_EPU = ggplot(results.long, aes(x = as.integer(year), y=estimate, fill=model))+
+  # add in confidence intervals as dotted lines
+  geom_linerange(aes(as.integer(year), ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.3)) +
+  # uncomment the line below if you want 50% confidence intervals as well
+  # geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.3) ) +
+  # Add a horizontal dotted line at the target population value
+  geom_hline(aes(yintercept=target), linetype = 2, color = 'red', size=0.5) +
+  # Add a trendline for each set of points (colored by method)
+  geom_smooth(aes(color=model), method=lm, se=FALSE, size=0.5, position = position_dodge(width=0.3)) +
+  # Add point estimates
+  geom_point(shape=21, size=2.5, position = position_dodge(width = 0.3))+
+  # ADd theme elements
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(axis.text.x=element_text(size=10, angle = 90, vjust = .4)) +
+  theme(axis.text.y = element_text(size=11), ) +
+  theme(legend.key.size = unit(1, 'in'), ) +
+  # name x and y axes and make sure there's only one label per year on x axis
+  scale_y_continuous("Population Estimate") +
+  scale_x_continuous("Year", breaks=c(unique(results.long$year))) +
+  # use greyscale for point fill & color
+  scale_fill_grey(start = 0, end = 0.7) +
+  scale_color_grey(start = 0, end = 0.7) +
+  # separate by EPU
+  facet_wrap(vars(EPU), scales="free")
+
+# view (keep in mind scale will be wonky)
+results_by_EPU
+# save (set size big enough to see everything)
+ggsave("Elk_estimates_EPU.jpeg", width = 20, height = 20, units="in")
 
 
-## 2021 ####
-
-mHT_y1 <- mHT_2021 %>%
-  select(-c(VarTot:VarMod)) %>%
-  mutate(model = "mHT")
-jags_y1 <- tau.jags_y1 %>%
-  mutate(model = "Bayesian")
-standard_y1<- standard %>%
-  filter(EPU %in% jags_y1$EPU) %>%
-  select(EPU, tau.hat=y1) %>%
-  mutate(model = "Standard")
-results_y1 <- bind_rows(mHT_y1, jags_y1, standard_y1) %>%
-  mutate(year = 2021)
-row.names(results_y1) <- 1:nrow(results_y1)
-
-
-## 2022 ####
-
-mHT_y2 <- mHT_2022 %>%
-  select(-c(VarTot:VarMod)) %>%
-  mutate(model = "mHT")
-jags_y2 <- tau.jags_y2 %>%
-  mutate(model = "Bayesian")
-standard_y2<- standard %>%
-  filter(EPU %in% jags_y2$EPU) %>%
-  select(EPU, tau.hat=y2) %>%
-  mutate(model = "Standard")
-results_y2 <- bind_rows(mHT_y2, jags_y2, standard_y2) %>%
-  mutate(year = 2022)
-row.names(results_y2) <- 1:nrow(results_y2)
-
-
-# 
-# ## Repeated EPUs ####
-# results_2x <- bind_rows(results_y1 %>% filter(EPU %in% results_y2$EPU), results_y2 %>% filter(EPU %in% results_y1$EPU)) %>%
-#   arrange(EPU, model, year)
-# 
-# results_2x %>%
-#   group_by(EPU, model) %>%
-#   summarize(pct_change = ((tau.hat[year == 2022]-tau.hat[year == 2021])/tau.hat[year == 2021])*100) %>%
-#   # write.csv("Results_2x.csv", row.names = F)
-# 
-# results_2x_plot = ggplot(results_2x, aes(x = as.factor(year), y=tau.hat, color=model))+
-#   geom_point(shape=15, size=3, position = position_dodge(width = 0.7)) +
-#   facet_wrap(vars(EPU), ncol = 3) +
-#   labs(y = "Population Estimate", size=12) +
-#   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-#         panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-#   geom_linerange(aes(as.factor(year), ymin = lcl, ymax = ucl), position = position_dodge(width = 0.7)) +
-#   theme(axis.text.x=element_text(size=12, angle = 90, vjust = .4), axis.title.x = element_blank()) +
-#   theme(axis.text.y = element_text(size=12)) +
-#   scale_colour_grey(start = 0.2, end = 0.8) +
-#   facet_wrap(vars(EPU), scales = "free_y",)
-# # For palette choices: 
-# #   RColorBrewer::display.brewer.all()
-# results_2x_plot
-# ggsave("Results_2x_plot.jpeg")
-
-
-
-## All results ####
-results_all <- bind_rows(results_y1, results_y2) %>%
-  write.csv("Results_all.csv", row.names = F)
-
-tau_transposed <- bind_rows(results_y1, results_y2) %>%
-  arrange(year, EPU) %>%
-  select(EPU, year, model, tau.hat) %>%
-  pivot_wider(names_from = model, values_from = tau.hat)
-
-results_final <- bind_rows(results_y1, results_y2) %>%
-  arrange(EPU) %>%
-  mutate(CI_95 = if_else(is.na(lcl_95), as.character(NA),
-                         paste(lcl_95, ucl_95, sep = ", ")),
-         CI_50 = if_else(is.na(lcl_50), as.character(NA),
-                         paste(lcl_50, ucl_50, sep = ", "))) %>%
-  select(EPU, year, model, tau.hat, CI_95, CI_50, cv) %>%
-  write.csv("Results_final.csv", row.names = F)
+# EXTRAS ####
 
 ## Agreement: mHT vs. Bayesian vs. Standard ####
 
-# mHT vs Bayesian
-
-agree.mB = agree_test(x = tau_transposed$mHT,
-                      y = tau_transposed$Bayesian, 
-                      delta = 1)
-print(agree.mB) # 70%
-agree.mB_plot = plot(agree.mB) +
-  scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
-agree.mB_plot
-
-
-# mHT vs Expert
-
-agree.mS = agree_test(x = tau_transposed$mHT,
-                      y = tau_transposed$Standard, 
-                      delta = 1)
-print(agree.mS) # 52%
-agree.mS_plot = plot(agree.mS) +
-  scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
-agree.mS_plot
+# UNCOMMENT BELOW IF YOU'RE INCLUDING mHT ESTIMATES
+# # mHT vs Bayesian (JAGS)
+# 
+# agree.mB = agree_test(x = results.all$mHT,
+#                       y = results.all$JAGS, 
+#                       delta = 1)
+# print(agree.mB) # 70%
+# agree.mB_plot = plot(agree.mB) +
+#   scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
+# agree.mB_plot
+# 
+# 
+# # mHT vs Expert
+# 
+# agree.mS = agree_test(x = results.all$mHT,
+#                       y = results.all$Standard, 
+#                       delta = 1)
+# print(agree.mS) # 52%
+# agree.mS_plot = plot(agree.mS) +
+#   scale_y_continuous(breaks = c(seq(-300, 400, by = 100)), limits = c(-300, 400))
+# agree.mS_plot
 
 
 # JAGS vs Expert
 
-agree.BS = agree_test(x = tau_transposed$Bayesian,
-                      y = tau_transposed$Standard, 
+agree.BS = agree_test(x = results.all$JAGS,
+                      y = results.all$Standard, 
                       delta = 1)
 print(agree.BS) # 76%
 agree.BS_plot = plot(agree.BS) +
@@ -196,7 +226,7 @@ agree.BS_plot
 
 # Agreement Table
 Agreement <- as.data.frame(matrix(NA, 3, 2))
-Agreement[1,] <- c("mHT vs. Bayesian", agree.mB$ccc.xy[1])
+Agreement[1,] <- c("mHT vs. Bayesian (JAGS)", agree.mB$ccc.xy[1])
 Agreement[2,] <- c("mHT vs. Standard", agree.mS$ccc.xy[1])
 Agreement[3,] <- c("Bayesian vs. Standard", agree.BS$ccc.xy[1])
 
@@ -204,90 +234,3 @@ colnames(Agreement) <- c("Test", "CCC")
 
 write.csv(Agreement,"Agreement.csv", row.names = FALSE)
 
-
-## CV stats ####
-cv.all <- bind_rows("mHT" = mHT.cv, "Bayesian" = jags.cv, .id = "Model") %>%
-  arrange(year)
-write.csv(cv.all, "CV.csv", row.names = F)
-
-# PLOT RESULTS ####
-
-## 2021 ####
-results_plot1 = ggplot(results_y1, aes(x = EPU, y=tau.hat, fill=model))+
-  geom_linerange(aes(EPU, ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.7)) +
-  geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.7) ) +
-  geom_point(shape=21, size=2.5, position = position_dodge(width = 0.7))+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  scale_y_continuous("Population Estimate") +
-  theme(axis.text.x=element_text(size=10, angle = 90, vjust = .4)) +
-  theme(axis.text.y = element_text(size=11)) +
-  scale_fill_grey(start = 0, end = 1)
-# For palette choices: 
-#   RColorBrewer::display.brewer.all()
-results_plot1
-ggsave("Results_2021.jpeg", width = 9, height = 5, units="in")
-
-# Bayesian and Standard only
-results_BS_plot1 = ggplot(results_y1[results_y1$model != "mHT",], aes(x = EPU, y=tau.hat, fill=model))+
-  geom_linerange(aes(EPU, ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.7)) +
-  geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.7) ) +
-  geom_point(shape=21, size=3, position = position_dodge(width = 0.7))+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  scale_y_continuous("Population Estimate") +
-  theme(axis.text.x=element_text(size=11, angle = 90, vjust = .4)) +
-  theme(axis.text.y = element_text(size=10)) +
-  scale_fill_grey(start = 0, end = 1)
-# For palette choices: 
-#   RColorBrewer::display.brewer.all()
-results_BS_plot1
-ggsave("Results_BS_2021.jpeg",width = 9, height = 5, units="in")
-
-## 2022 ####
-results_plot2 = ggplot(results_y2, aes(x = EPU, y=tau.hat, fill=model))+
-  geom_linerange(aes(EPU, ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.7)) +
-  geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.7) ) +
-  geom_point(shape=21, size=3, position = position_dodge(width = 0.7))+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  scale_y_continuous("Population Estimate") +
-  theme(axis.text.x=element_text(size=10, angle = 90, vjust = .4)) +
-  theme(axis.text.y = element_text(size=11)) +
-  scale_fill_grey(start = 0, end = 1)
-# For palette choices: 
-#   RColorBrewer::display.brewer.all()
-results_plot2
-ggsave("Results_2022.jpeg", width = 9, height = 5, units="in")
-
-# Bayesian and Standard only
-results_BS_plot2 = ggplot(results_y2[results_y2$model != "mHT",], aes(x = EPU, y=tau.hat, fill=model))+
-  geom_point(shape=21, size=3, position = position_dodge(width = 0.7))+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  scale_y_continuous("Population Estimate") +
-  geom_linerange(aes(EPU, ymin = lcl_95, ymax = ucl_95), linetype = 2, position = position_dodge(width = 0.7)) +
-  geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.7) ) +
-  theme(axis.text.x=element_text(size=11, angle = 90, vjust = .4)) +
-  theme(axis.text.y = element_text(size=10)) +
-  scale_fill_grey(start = 0, end = 1)
-# For palette choices: 
-#   RColorBrewer::display.brewer.all()
-results_BS_plot2
-ggsave("Results_BS_2022.jpeg", width = 9, height = 5, units="in")
-  
-# # Check Distributions ###
-# 
-# mcmc_violin(jags_output$BUGSoutput$sims.array,
-#             probs = c(0.025, 0.05, 0.5, 0.95, 0.975)) +
-#   scale_y_continuous("Population Estimate") +
-#   theme(axis.text.y = element_text(size=12))
-#   
-# mcmc_areas(jags_output$BUGSoutput$sims.array,
-#            prob = 0.90,
-#            prob_outer = 0.95, area_method = "equal height")
-# 
-# mcmc_areas(jags_output$BUGSoutput$sims.array,
-#            pars = vars(tau.nh2y2, tau.nh4y2, tau.nh5y2, tau.nh6y2, tau.nh12y2, tau.nh13y2, tau.nh14y2, tau.nh15y2, tau.nh18y2, tau.nh20y2),
-#            prob = 0.80,
-#            prob_outer = 0.95, area_method = "equal height")

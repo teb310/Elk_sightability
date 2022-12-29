@@ -1,6 +1,9 @@
 # Elk Sightability Analysis
 # Step 2: Modified Horowitz-Thompson Analysis
 
+# NOTE: WE EXPECT THIS ESTIMATE TO BE LESS ACCURATE AND PRECISE THAN THE BAYESIAN (JAGS) ESTIMATE.
+# YOU CAN SKIP THIS SCRIPT IF YOU DON'T WANT THESE ESTIMATES FOR COMPARISON
+
 list.of.packages <-
   c(
     "tidyverse",
@@ -32,11 +35,12 @@ if (length(new.packages))
   install.packages(new.packages)
 lapply(list.of.packages, require, character.only = TRUE)
 
-setwd("C:/Users/TBRUSH/R/Elk_sightability/input")
-load("mHT_input.Rdata")
+setwd("C:/Users/TBRUSH/R/SightabilityModels/input")
+load("mHT_input.rdata")
+load("other_inputs.rdata")
 
 
-# Repeat below for each year you want estimates from
+# Repeat below for each year you want new estimates from
 
 # Set year
 y <- 2022
@@ -74,11 +78,13 @@ tau.hats <- round(tau.hats, 0)
 
 results <- as.data.frame(tau.hats) %>%
   bind_cols(samp.y %>% select(stratum)) %>%
-  inner_join(eff[eff$year == y,] %>% select(Unit, ID), by=c("stratum"="ID")) %>%
-  select(EPU=Unit, tau.hat, lcl_95:ucl_50, everything()) %>%
+  inner_join(eff[eff$year == y,] %>% select(EPU, ID), by=c("year","stratum"="ID")) %>%
+  select(EPU, tau.hat, lcl_95:ucl_50, everything()) %>%
   mutate(sd = sqrt(VarTot),
          cv = sd/tau.hat) %>%
   arrange(EPU)
 
-setwd("C:/Users/TBRUSH/R/Elk_sightability/out")
-save(results, file=paste0("mHT_",y,".RData"))
+setwd(output)
+save(results, file=paste0("mHT_",y,".rdata"))
+
+rm(list=ls())

@@ -1,8 +1,6 @@
 # Elk Sightability Analysis
 # Step 1: Load and clean
 
-setwd("C:/Users/TBRUSH/R/Elk_sightability/input")
-
 # 1.1 LOAD PACKAGES ####
 
 list.of.packages <- c("tidyverse", "lubridate","chron","bcdata", "bcmaps","sf", "rgdal", "readxl", "Cairo", "rjags","coda","OpenStreetMap", "ggmap", "SightabilityModel","truncnorm", "doParallel", "nimble", "xtable", "statip", "R2jags")
@@ -12,20 +10,21 @@ if(length(new.packages)) install.packages(new.packages)
 lapply(list.of.packages, require, character.only = TRUE)
 
 # 1.2 Create functions ####
+# Name fixer function converts misspelled or abbreviated EPU names to standard names
 name_fixer <- function(x){
 output <- case_when(
     grepl("Rainy", x, ignore.case = TRUE) ~ "Rainy-Gray",
-    grepl("Narrows", x, ignore.case = TRUE) ~ "Tzoonie-Narrows",
-    grepl("Deserted", x, ignore.case = TRUE) ~ "Deserted-Stakawus",
-    grepl("Chehalis", x, ignore.case = TRUE) ~ "Chehalis",
-    grepl("Sechelt", x, ignore.case = TRUE) ~ "Sechelt Peninsula",
+    grepl("Narrow", x, ignore.case = TRUE) ~ "Tzoonie-Narrows",
+    grepl("Desert", x, ignore.case = TRUE) ~ "Deserted-Stakawus",
+    grepl("Cheh", x, ignore.case = TRUE) ~ "Chehalis",
+    grepl("Sech", x, ignore.case = TRUE) ~ "Sechelt Peninsula",
     grepl("Homa", x, ignore.case = TRUE) ~ "Homathko",
-    grepl("Haslam", x, ignore.case = TRUE) ~ "Haslam",
+    grepl("Hasl", x, ignore.case = TRUE) ~ "Haslam",
     grepl("Dani", x, ignore.case = TRUE) ~ "Powell-Daniels",
-    grepl("Quatum", x, ignore.case = TRUE) ~ "Quatam",
+    grepl("Quat", x, ignore.case = TRUE) ~ "Quatam",
     grepl("Lillooet", x, ignore.case = TRUE) ~ "Lower Lillooet",
-    grepl("Vancouver", x, ignore.case = TRUE) ~ "Vancouver",
-    grepl("Squamish", x, ignore.case = TRUE) ~ "Squamish",
+    grepl("Van", x, ignore.case = TRUE) ~ "Vancouver",
+    grepl("Squam", x, ignore.case = TRUE) ~ "Squamish",
     grepl("Indian", x, ignore.case = TRUE) ~ "Indian",
     grepl("Stave", x, ignore.case = TRUE) ~ "Stave",
     grepl("Theo", x, ignore.case = TRUE) ~ "Theo",
@@ -36,6 +35,7 @@ output <- case_when(
 return(output)
 }
 
+# Standard_survey standardizes survey types
 standard_survey <- function(x){
 output <- case_when(
     grepl("incidental", x, ignore.case = TRUE) ~ "Incidental",
@@ -47,194 +47,111 @@ output <- case_when(
 return(output)
 }
 
+# compile_sheets binds all sheets in a file (filepath) that follow a certain naming patter (type)
+# E.g. to bind survey data sheets from all years, type should be "Data"
+compile_sheets <- function(filepath,type){
+  sheets <- excel_sheets(filepath)
+  sheets <- subset(sheets, str_detect(sheets, paste0(type)) ==T)
+  
+  output <- data.frame(matrix(ncol = 0, nrow = 0))
+  
+  for(i in 1:length(sheets))
+  {
+    output <- bind_rows(output, read_excel(filepath, sheet = paste0(sheets[i])))
+  }
+  return(output)
+}
+
 # 1.3 LOAD DATA ####
-dat.2021 <- read_excel("SurveyData_ SPRING_2022.xls", 
-                       sheet = "2021 Survey Data", range = "A1:O136", 
-                       col_types = c("numeric", "text", "text", 
-                                     "numeric", "numeric", "numeric", 
-                                     "skip", "numeric", "numeric", "numeric", 
-                                     "text", "text", "numeric", "text", 
-                                     "text"))
-dat.2022 <- read_excel("SurveyData_ SPRING_2022.xls", 
-                       sheet = "2022 Survey Data", range = "A1:P102", 
-                       col_types = c("numeric", "text", "text", 
-                                     "numeric", "numeric", "numeric", 
-                                     "skip", "numeric", "numeric", "numeric", 
-                                     "skip", "text", "text", "numeric", 
-                                     "text", "text"))
-EPU.areas <- read_csv("Effort/EPU_areas.csv")
 
-EPU.list <- as.character(EPU.areas$Unit)
-print(EPU.list)
+# Set your working directory paths and survey data file path
 
-# 1.4 mHT DATA ####
+input <- "C:/Users/TBRUSH/R/SightabilityModels/input"
+output <- "C:/Users/TBRUSH/R/SightabilityModels/output"
 
-## 1.4.1 SIGHTABILITY ####
+file <- "example_data.xlsx"
 
-# clean survey types and filter out incidental observations
-# 2 options:
-## 1. 1 for spotting collared elk, 0 for searching for collar
-## 2. 1 for spotting any elk (collared or not), 0 for searching for collar
+setwd(input)
 
-exp.tmp <- bind_rows(dat.2021, dat.2022) %>%
-  mutate(
-    subunit = EPU,
-    total = `Elk Obs.`,
-    survey.type = `Survey type`,
-    voc = `% cover`,
-    .keep = "unused"
-  )
-exp.tmp$survey.type <- standard_survey(exp.tmp$survey.type) 
-exp.tmp$subunit <- name_fixer(exp.tmp$subunit)
+# Extract observations from all years
+# If you didn't name your survey data sheets with "Data", replace below
+obs.all <- compile_sheets(file, "Data")
 
-exp.tmp <- exp.tmp %>%
-  filter(survey.type == "Telemetry" | survey.type == "Inventory")
+# fix EPU names & survey types
+obs.all$EPU <- name_fixer(obs.all$EPU)
+obs.all$survey.type <- standard_survey(obs.all$survey.type) 
 
-# Separate collar observations from non-collar
-exp.tmp <- exp.tmp %>%
-  mutate(collar =
-           case_when(
-             grepl("no collar", `Notes:`, ignore.case = TRUE) ~ "No Collar",
-             grepl("dart", `Notes:`, ignore.case = TRUE) ~ "No Collar",
-             str_detect(`Notes:`, "15\\d.\\d\\d\\d") ~ as.character(
-               str_extract_all(`Notes:`, "15\\d.\\d\\d\\d"), sep=", "),
-             str_detect(`Notes:`, "\\d\\d\\d\\d\\d") ~ as.character(
-               str_extract_all(`Notes:`, "\\d\\d\\d\\d\\d"), sep=", "),
-             str_detect(`Notes:`, "2 yellow collar") ~ "Collar, Collar",      
-             grepl("yellow collar", `Notes:`, ignore.case = TRUE) ~ "Collar",
-             grepl("Telemetry", `survey.type`) ~ "Collar",
-             TRUE ~ "No Collar"
-           )
-  ) %>%
-  filter(collar != "No Collar") %>%
-  arrange(collar)
 
-# duplicate observations with 2 collars, then clean
+# Bring in surveyed area from each year
+surveyed.areas <- compile_sheets(file, "Effort")
 
-exp.tmp <- rbind(exp.tmp, exp.tmp[rep(str_detect(exp.tmp$collar, ","), 1),])
+# Get total EPU areas and save EPU names
+EPU.areas <- read_csv("EPU_areas.csv")
+EPU.list <- as.character(EPU.areas$EPU)
 
-exp <- exp.tmp %>%
-  transmute(
-    year = as.integer(Year),
-    observed = as.integer(if_else(survey.type=="Inventory", 1, 0)),
-    voc = as.integer(voc*100),
-    grpsize = as.integer(total)
-  )
+# 1.4 SIGHTABILITY DATA ####
 
-## 1.4.2 EFFORT ####
+# This script assumes that all surveys include sightability trials
+# i.e. during survey, surveyors keep track of observed collars
+# after survey, surveyors turn on telemetry to track missed collars
+# If this is not true, be sure to remove any other surveys below
 
-area.2021 <- read_csv("Effort/areas_2021_INV.csv")
-eff.2021 <- area.2021 %>%
-  group_by(Unit) %>%
-  summarise(area_surveyed = sum(Shape_Area)) %>%
-  mutate(area_surveyed_km = area_surveyed/1000000, year = 2021)
+sight <- obs.all
 
-area.2022 <- read_csv("Effort/areas_2022_INV.csv")
-eff.2022 <- area.2022 %>%
-  group_by(Unit) %>%
-  summarise(area_surveyed = sum(Shape_Area)) %>%
-  mutate(area_surveyed_km = area_surveyed/1000000, year = 2022)
+# filter out incidental observations
+sight <- sight %>%
+  filter(survey.type == "Telemetry" | survey.type == "Inventory",
+# filter out observations with no collars
+  collars>0)
 
-setdiff(bind_rows(eff.2021, eff.2022)$Unit, EPU.list) # Names match
+# duplicate observations with >1 collars
+sight.dup <- as.data.frame(matrix(NA, 0, ncol(sight)))
+colnames(sight.dup) <- colnames(sight)
 
-# Check that all EPUs in eff have sightability data in exp
-# setdiff(eff.2021$Unit, exp.tmp$subunit[exp.tmp$Year==2021]) # No exp for mcnab ->
-# eff.2021 <- eff.2021 %>%
-#   filter(Unit != "McNab")
-# 
-# setdiff(eff.2022$Unit, exp.tmp$subunit[exp.tmp$Year==2022]) # No exp for Brittain, Tzoonie ->
-# eff.2022 <- eff.2022 %>%
-#   filter(Unit != "Brittain",
-#          Unit != "Tzoonie-Narrows")
+for(i in 1:nrow(sight))
+{
+  if(sight$collars[i]>1){
+    sight.dup <- rbind(sight.dup, rep(sight[i,], sight$collars[i]-1))
+    
+  }
+}
+sight <- bind_rows(sight, sight.dup)
 
-eff <- bind_rows(eff.2021, eff.2022)
+# 1.5 EFFORT ####
 
-# Amend EPU.list to only include surveyed EPUs
-EPU.list <- data.frame(Unit = unique(eff$Unit)) %>%
-  mutate(ID = seq(1,length(Unit),1))
+eff <- surveyed.areas %>%
+  group_by(year, EPU) %>%
+  summarise(area_surveyed = sum(area_surveyed)) %>%
+  mutate(area_surveyed_km = area_surveyed/1000000)
 
-eff <- left_join(eff, EPU.list, by="Unit")
+setdiff(eff$EPU, EPU.list) # If nothing is returned, names match
 
-sampinfo <- left_join(eff, EPU.areas, by="Unit") %>%
+# Amend EPU.list to only include surveyed EPUs, then assign ID numbers
+EPU.list <- data.frame(EPU = unique(eff$EPU)) %>%
+  mutate(ID = seq(1,length(EPU),1))
+
+eff <- left_join(eff, EPU.list, by="EPU")
+
+sampinfo <- left_join(eff, EPU.areas, by="EPU") %>%
   mutate(stratum = ID, 
-         Nh = as.integer(LIW_Cap_sqkm), 
-         nh = as.integer(if_else(area_surveyed_km > LIW_Cap_sqkm, LIW_Cap_sqkm, area_surveyed_km)), 
-         year = as.integer(year)) %>%
+         Nh = area, 
+         nh = as.integer(if_else(area_surveyed_km > area, area, area_surveyed_km))) %>%
   select(year, stratum, Nh, nh)
 
-## 1.4.3 OBSERVATIONAL DATASET ####
+# 1.6 OBSERVATIONAL DATASET ####
 
-# 2021
-obs.2021 <- dat.2021 %>%
+# make sure we're only keeping data from EPUs with effort data that year
+obs <- inner_join(obs.all, eff %>% select(year, EPU, ID), by=c("EPU","year")) %>%
   mutate(
-    Cow = if_else(is.na(Cow), 0, Cow),
-    Calf = if_else(is.na(Calf), 0, Calf),
-    Spike = if_else(is.na(Spike), 0, Spike),
-    Bull = if_else(is.na(Bull), 0, Bull),
-    Unclass. = if_else(is.na(Unclass.), 0, Unclass.)
-  ) %>%
-  transmute(
-    year = 2021,
-    stratum = 0,
-    subunit = name_fixer(dat.2021$EPU),
-    total = if_else(is.na(`Elk Obs.`), 0, `Elk Obs.`),
-    cows = Cow,
-    calves = Calf,
-    spikes = Spike,
-    bulls = Bull,
-    unclass = `Unclass.`,
-    grpsize = `Elk Obs.`,
-    voc = `% cover`*100,
-    habitat = Habitat,
-    activity = Activity,
-    notes = `Notes:`,
-    survey.type = `Survey type`,
-    date = Date
-  ) %>%
-    filter(subunit %in% eff$Unit[eff$year == 2021])
-
-obs.2021$survey.type <- standard_survey(obs.2021$survey.type)
-
-# 2022
-obs.2022 <- dat.2022 %>%
-  mutate(
-    Cow = if_else(is.na(Cow), 0, Cow),
-    Calf = if_else(is.na(Calf), 0, Calf),
-    Spike = if_else(is.na(Spike), 0, Spike),
-    Bull = if_else(is.na(Bull), 0, Bull),
-    Unclass. = if_else(is.na(Unclass.), 0, Unclass.)
-  ) %>%
-  transmute(
-    year = 2022,
-    stratum = 0,
-    subunit = name_fixer(dat.2022$EPU),
-    total = if_else(is.na(`Elk Obs.`), 0, `Elk Obs.`),
-    cows = Cow,
-    calves = Calf,
-    spikes = Spike,
-    bulls = Bull,
-    unclass = `Unclass.`,
-    grpsize = `Elk Obs.`,
-    voc = `% cover`*100,
-    habitat = Habitat,
-    activity = Activity,
-    notes = `Notes:`,
-    survey.type = `Survey type`,
-    date = Date
-  ) %>%
-filter(subunit %in% eff$Unit[eff$year == 2022])
-obs.2022$survey.type <- standard_survey(obs.2022$survey.type)
-
-
-# bind together & only keep inventory & capture surveys
-obs.inv <- bind_rows(obs.2021, obs.2022) %>%
+    stratum = ID,
+    subunit = EPU,
+    total = if_else(is.na(total), 0, total),
+    voc = voc*100,
+    .keep="unused") %>%
+# only keep inventory & capture surveys
   filter(survey.type=="Inventory" | survey.type=="Capture") %>%
   select(-survey.type)
 
-# stratum field
-obs <- inner_join(obs.inv, EPU.list, by=c("subunit"="Unit")) %>%
-  mutate(stratum = as.integer(ID), .keep = "unused") %>%
-  filter(!is.na(stratum))
 
 # get rid of NAs in voc
 ## add mean voc by EPU
@@ -247,81 +164,90 @@ obs.voc <- left_join(obs, avg.voc, by="subunit") %>%
   mutate(mean_voc = if_else(is.na(mean_voc), avg.voc.overall, mean_voc),
          voc = if_else(is.na(voc), mean_voc, voc))
 
-obs <- obs.voc
+obs <- obs.voc %>%
+  arrange(year, stratum)
 
 # Make all numeric fields integers
-obs <- obs %>%
-  transmute(year = as.integer(year),
-         stratum = as.integer(stratum),
-         subunit = as.integer(stratum),
-         total = as.integer(total),
-         cows = as.integer(cows),
-         calves = as.integer(calves),
-         spikes = as.integer(spikes),
-         bulls = as.integer(bulls),
-         unclass = as.integer(unclass),
-         voc = as.integer(voc),
-         grpsize = as.integer(grpsize)) %>%
-  arrange(year, stratum)
-obs %>%
+# obs <- obs %>%
+#   transmute(year = as.integer(year),
+#          stratum = as.integer(stratum),
+#          subunit = as.integer(stratum),
+#          total = as.integer(total),
+#          cows = as.integer(cows),
+#          calves = as.integer(calves),
+#          spikes = as.integer(spikes),
+#          bulls = as.integer(bulls),
+#          unclass = as.integer(unclass),
+#          voc = as.integer(voc),
+#          grpsize = as.integer(grpsize)) %>%
+#   arrange(year, stratum)
+
+
 # make sure totals = sum of cows, calves, etc
-  filter(total != (cows+calves+spikes+bulls+unclass)) %>%
-  glimpse()
-# If records show up, use code below to add unclassified individuals & re-check
-obs <- obs %>%
-  mutate(
-    unclass = if_else(
-      total > (cows+calves+spikes+bulls+unclass), total-(cows+calves+spikes+bulls),
-      unclass),
-    total = (cows+calves+spikes+bulls+unclass))
 obs %>%
-  filter(total != (cows+calves+spikes+bulls+unclass)) %>%
-  glimpse() # all good now
+  filter(total != (cow+calf+spike+bull+UC)) %>%
+  glimpse()
+
+# If records show up, use code below to add unclassified individuals & re-check
+# obs <- obs %>%
+#   mutate(
+#     unclass = if_else(
+#       total > (cows+calves+spikes+bulls+unclass), total-(cows+calves+spikes+bulls),
+#       unclass),
+#     total = (cows+calves+spikes+bulls+unclass))
+# obs %>%
+#   filter(total != (cows+calves+spikes+bulls+unclass)) %>%
+#   glimpse() # all good now
 
 # Before saving, check moose dataset to ensure your data has the same format
-data(exp.m)
-data(obs.m)
-data(sampinfo.m)
+# data(exp.m)
+# data(obs.m)
+# data(sampinfo.m)
 
-## 1.4.4 SAVE mHT DATA ####
-save(list = c("eff", "exp", "obs", "sampinfo"), file = "mHT_input.Rdata")
+# 1.7 mHT DATA ####
 
-# 1.5 BAYESIAN DATA ####
+# slight tweaks to sight dataframe
+exp <- sight %>%
+  transmute(
+    year = year,
+    observed = as.integer(if_else(survey.type=="Inventory", 1, 0)),
+    voc = as.integer(voc*100),
+    grpsize = as.integer(total)
+  )
 
+# save it for the next script
+save(list = c("eff", "exp", "obs", "sampinfo"), file = "mHT_input.rdata")
+
+# 1.8 BAYESIAN DATA ####
+# Tweaks for Bayesian entry
 ## Main differences between bayesian and mHT datasets:
 ## 1. VOC is a decimal in Bayesian
 ## 2. subunit is numbered like stratum in Bayesian
 
+## 1.8.1 SIGHT DAT ####
 
-## 1.5.1 SIGHT DAT ####
-
-# Sightability survey data:  64 records
 # s = habitat indicator ()
 # x = visual obstrcution measurements associated with the test trial data used to develop the sightability model
 # a = activity indicator (0 if bedded, 1 if standing/moving)
 # z = detection indicator (1 if the group was observed, 0 otherwise)
 # t = group size
 
-sight.dat <- exp.tmp %>%
-  transmute(
-    year = as.integer(Year),
+sight.dat <- sight %>%
+  mutate(
     observed = as.integer(if_else(survey.type=="Inventory", 1, 0)),
-    voc = as.integer(voc*100),
-    grpsize = as.integer(total),
-    activity = Activity,
-    habitat = Habitat
+    grpsize = as.integer(total)
   )  %>%
 # standardize habitat
   mutate(
-    # 1 - rock / other (gravel, landfill, road, WTP, other)
-    # 2 - meadow / riparian (field, meadow, riparian, wetland, river, slide)
+    # 1 - rock / other (gravel, landfill, road, slide, other)
+    # 2 - meadow / riparian (field, meadow, riparian, wetland, river)
     # 3 - cutblock / powerline (block, powerline, NSR, FTG)
     # 4 - mature forest (mature, old)
     habitat = case_when(
       grepl("mature|old|conifer", habitat, ignore.case = TRUE) ~ 4,
       grepl("block|powerline|nsr|ftg", habitat, ignore.case = TRUE) ~ 3,
-      grepl("field|meadow|riparian|wetland|river|slide|out", habitat, ignore.case = TRUE) ~ 2,
-      grepl("gravel|landfill|road|wtp|other", habitat, ignore.case = TRUE) ~ 1
+      grepl("field|meadow|riparian|wetland|river", habitat, ignore.case = TRUE) ~ 2,
+      grepl("gravel|landfill|road|wtp|other|slide", habitat, ignore.case = TRUE) ~ 1
     ),
     # standardize activity
     activity = case_when(
@@ -330,55 +256,53 @@ sight.dat <- exp.tmp %>%
     a = as.double(activity),
     s = as.double(habitat),
     t = as.double(grpsize),
-    x.tilde = as.double(voc*.01),
+    x.tilde = as.double(voc),
     z.tilde = as.double(observed)) %>%
   select(a, s, t, x.tilde, z.tilde)
 
 glimpse(sight.dat) # check - looks the same as Fieberg's sight_dat csv
 
-### 1.5.1.1 test correlations ####
-sight.dat %>% group_by(z.tilde) %>% summarize(mean = mean(x.tilde))
-
-x.z <- cor.test(sight.dat$z.tilde, sight.dat$x.tilde, method="pearson")
-a.z <- cor.test(sight.dat$z.tilde[!is.na(sight.dat$a)], sight.dat$a[!is.na(sight.dat$a)], method="pearson")
-s.z <- cor.test(sight.dat$z.tilde[!is.na(sight.dat$s)], sight.dat$s[!is.na(sight.dat$s)], method="pearson")
-t.z <- cor.test(sight.dat$z.tilde[!is.na(sight.dat$t)], sight.dat$t[!is.na(sight.dat$t)], method="pearson")
-
-Correlation <- as.data.frame(matrix(NA, 4, 3))
-Correlation[1,] <- c("VOC", x.z$estimate, x.z$p.value)
-Correlation[2,] <- c("Activity", a.z$estimate, a.z$p.value)
-Correlation[3,] <- c("Habitat", s.z$estimate, s.z$p.value)
-Correlation[4,] <- c("Group size", t.z$estimate, t.z$p.value)
-colnames(Correlation) <- c("Variable", "Correlation", "p")
-
-write.csv(Correlation, "C:/Users/TBRUSH/R/Elk_sightability/out/Correlation.csv", row.names = FALSE)
+### 1.8.1.1 test correlations ####
+# sight.dat %>% group_by(z.tilde) %>% summarize(mean = mean(x.tilde))
+# 
+# x.z <- cor.test(sight.dat$z.tilde, sight.dat$x.tilde, method="pearson")
+# a.z <- cor.test(sight.dat$z.tilde[!is.na(sight.dat$a)], sight.dat$a[!is.na(sight.dat$a)], method="pearson")
+# s.z <- cor.test(sight.dat$z.tilde[!is.na(sight.dat$s)], sight.dat$s[!is.na(sight.dat$s)], method="pearson")
+# t.z <- cor.test(sight.dat$z.tilde[!is.na(sight.dat$t)], sight.dat$t[!is.na(sight.dat$t)], method="pearson")
+# 
+# Correlation <- as.data.frame(matrix(NA, 4, 3))
+# Correlation[1,] <- c("VOC", x.z$estimate, x.z$p.value)
+# Correlation[2,] <- c("Activity", a.z$estimate, a.z$p.value)
+# Correlation[3,] <- c("Habitat", s.z$estimate, s.z$p.value)
+# Correlation[4,] <- c("Group size", t.z$estimate, t.z$p.value)
+# colnames(Correlation) <- c("Variable", "Correlation", "p")
+# 
+# write.csv(Correlation, "C:/Users/TBRUSH/R/Elk_sightability/out/Correlation.csv", row.names = FALSE)
 
 ### 1.5.1.2 finish sight.dat ####
 # voc is most significantly correlated with sightability -> select only voc
 sight.dat <- sight.dat %>% select(x.tilde, z.tilde)
 
-## 1.3.4 OPER DAT ####
+## 1.8.2 OPER DAT ####
 
-# Operational survey data:  4380 records
-# (includes observed and augmented data for the annual surveys in  2006 and 2007 combined).
-# Augmented data records have NA (missing) for x, y, q.
-# x = visual obstruction measurements
-# ym1 = y-1, where y = observed group size
-# h = stratum identifier (all same stratum)
-# q = indicator variable that represents whether the group belongs to the study population (equal to 1 for all observed groups and NA for all augmented groups).
-# z = detection indicator (equal to 1 if the group was observed during the operational survey and 0 otherwise)
-# subunits = unique plot identifier (for all sampled plots).
-# yr = year of observation (1 = 2006, 2= 2007)
+# Get year ID
+year.ID <- as.data.frame(matrix(NA, length(unique(obs$year)), 2))
+colnames(year.ID) <- c("year", "year.ID")
 
-# non-augmented data
+year.ID[,1] <- unique(obs$year) %>% sort()
+year.ID[,2] <- seq(1,length(unique(obs$year)))
 
-oper.dat <- obs %>%
+# join to oper.dat
+oper.dat <- left_join(obs, year.ID, by="year")
+
+# get non-augmented data organized
+oper.dat <- oper.dat %>%
   transmute(x = round(as.double(voc*.01), 2),
             ym1 = total-1,
             h = as.double(stratum),
             q = 1,
             z = 1,
-            yr = if_else(year == 2021, 1, 2),
+            yr = year.ID,
             subunits = as.double(stratum)) %>%
   glimpse()
 
@@ -405,11 +329,8 @@ oper.dat <- rbind(oper.dat, oper.dat.aug) %>%
 
 glimpse(oper.dat) # check
 
-## 1.3.5 PLOT DAT ####
+## 1.8.3 PLOT DAT ####
 
-# Plot-level information data: 77 records (one for each of the plots sampled in either 2006 or 2007)
-# h.plots = stratum to which the plot belonged (1, 2, 3 correspond to low, medium and high density strata)
-# yr.plots = year the plot was sampled (1 = 2006, 2= 2007)
 plot.dat <- oper.dat %>%
   select(yr, h) %>%
   distinct() %>%
@@ -419,23 +340,10 @@ plot.dat <- oper.dat %>%
   arrange(yr.plots, h.plots)
 glimpse(plot.dat)
 
-## 1.3.6 SCALAR DAT ####
-
-#   Scalars:
-#   R = number of sightability trials (64)
-# 
-#   Ngroups = number of observed and augmented groups for the 2006 and 2007 annual operational surveys (7290)
-# 
-#   Nsubunits.yr = total number of plots sampled in 2006 and 2007 combined = 81 
-# 
-#   ny1 = number of groups associated with the annual survey in 2006 (year 1) = 960
+## 1.8.4 SCALAR DAT ####
 
 scalar.dat <- as.data.frame(matrix(NA, 1, 3))
 colnames(scalar.dat) <- c("R", "Ngroups", "Nsubunits.yr")
-
-unique(oper.dat$h[oper.dat$yr==1])
-unique(oper.dat$h[oper.dat$yr==2])
-
 
 scalar.dat <- as.data.frame(matrix(NA, 1, (nrow(plot.dat))))
 i <- 1
@@ -457,7 +365,11 @@ for (i in 1:nrow(plot.dat)){
   scalar.sums[i, 2] <- sum(scalar.dat[,0:i])
 }
   
-## 1.3.7 SAVE DATA ####
-save(list = c("sight.dat", "oper.dat", "plot.dat", "scalar.dat", "eff", "scalar.sums"), file = "jags_input.Rdata")
+## 1.8.5 SAVE BAYESIAN DATA ####
+save(list = c("sight.dat", "oper.dat", "plot.dat", "scalar.dat", "eff", "scalar.sums"), file = "jags_input.rdata")
+
+# 1.9 SAVE OTHER USEFUL DATA
+save(list=c("compile_sheets","input","output","file","EPU.list","year.ID", "eff"), file="other_inputs.rdata")
+
 rm(list = ls())
 

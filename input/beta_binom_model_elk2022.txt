@@ -7,8 +7,8 @@ model
         g.tilde[i] <- exp(logitg[i])/(1 + exp(logitg[i]))
         z.tilde[i] ~ dbern(g.tilde[i])
     }
-    for (j in 1:2) {
-        for (i in 1:21) {
+    for (j in 1:years) {
+        for (i in 1:stratums) {
             alpha.voc[i, j] ~ dgamma(1, 0.01)
             beta.voc[i, j] ~ dgamma(1, 0.01)
         }
@@ -17,14 +17,14 @@ model
         x[k] ~ dbeta(alpha.voc[h[k], yr[k]], beta.voc[h[k], yr[k]])  
             T(0.00000E+00, 0.999)
     }
-    for (m in 1:2) {
-        for (p in 1:21) {
+    for (m in 1:years) {
+        for (p in 1:stratums) {
             loglam[p, m] ~ dnorm(0.00000E+00, 0.1)  T(-10, 10)
             lam[p, m] <- exp(loglam[p, m])
         }
     }
-    for (q in 1:2) {
-        for (r in 1:21) {
+    for (q in 1:years) {
+        for (r in 1:stratums) {
             a[r, q] ~ dgamma(1, 0.01)
             b[r, q] ~ dgamma(1, 0.01)
         }
