@@ -1,3 +1,0 @@
-SAMPINFO
-Nh = greatest area surveyed in one year -> accounts for fact that survey areas are chosen based on where elk will be
-nh = area of EPU surveyed in year x (via flightpath files)
