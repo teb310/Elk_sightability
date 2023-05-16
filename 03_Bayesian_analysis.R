@@ -1,7 +1,7 @@
 # Elk Sightability Analysis
 # Step 3: Bayesian Analysis
 
-setwd("C:/Users/TBRUSH/R/Elk_sightability/input")
+setwd("C:/Users/TBRUSH/R/SightabilityModels/input")
 load("jags_input.rdata")
 load("other_inputs.rdata")
 
@@ -34,7 +34,7 @@ bundle.dat <- list(x.tilde=sight.dat$x.tilde, z.tilde=sight.dat$z.tilde, #sight.
 # Run model
 jags_output <- jags(bundle.dat, inits, params, "beta_binom_model_elk2022.txt", nc, ni, nb, nt)
 
-setwd("C:/Users/TBRUSH/R/Elk_sightability/out")
+setwd(output)
 
 save("jags_output", "scalar.dat", file="jags_output_ex.rdata")
 
