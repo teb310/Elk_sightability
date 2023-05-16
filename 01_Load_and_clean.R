@@ -19,10 +19,12 @@ output <- case_when(
     grepl("Cheh", x, ignore.case = TRUE) ~ "Chehalis",
     grepl("Sech", x, ignore.case = TRUE) ~ "Sechelt Peninsula",
     grepl("Homa", x, ignore.case = TRUE) ~ "Homathko",
+    grepl("Lois", x, ignore.case = TRUE) ~ "Lois",
+    grepl("Eldr", x, ignore.case = TRUE) ~ "Eldred"
     grepl("Hasl", x, ignore.case = TRUE) ~ "Haslam",
     grepl("Dani", x, ignore.case = TRUE) ~ "Powell-Daniels",
     grepl("Quat", x, ignore.case = TRUE) ~ "Quatam",
-    grepl("Lillooet", x, ignore.case = TRUE) ~ "Lower Lillooet",
+    grepl("Lill", x, ignore.case = TRUE) ~ "Lower Lillooet",
     grepl("Van", x, ignore.case = TRUE) ~ "Vancouver",
     grepl("Squam", x, ignore.case = TRUE) ~ "Squamish",
     grepl("Indian", x, ignore.case = TRUE) ~ "Indian",
@@ -125,8 +127,8 @@ sight <- bind_rows(sight, sight.dup)
 
 eff <- surveyed.areas %>%
   group_by(year, EPU) %>%
-  summarise(area_surveyed = sum(area_surveyed)) %>%
-  mutate(area_surveyed_km = area_surveyed/1000000)
+  summarise(area_surveyed_m = sum(area_surveyed_m)) %>%
+  mutate(area_surveyed_km = area_surveyed_m/1000000)
 
 setdiff(eff$EPU, EPU.list) # If nothing is returned, names match
 
@@ -151,10 +153,11 @@ obs <- inner_join(obs.all, eff %>% select(year, EPU, ID), by=c("EPU","year")) %>
     subunit = EPU,
     total = if_else(is.na(total), 0, total),
     voc = voc*100,
-    .keep="unused") %>%
+    .keep="unused")
+# %>%
 # only keep inventory & capture surveys
-  filter(survey.type=="Inventory" | survey.type=="Capture") %>%
-  select(-survey.type)
+  # filter(survey.type=="Inventory" | survey.type=="Capture") %>%
+  # select(-survey.type)
 
 
 # get rid of NAs in voc
