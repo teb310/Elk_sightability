@@ -22,7 +22,7 @@ standard <- compile_sheets(file, "Summary") %>%
 setwd(output)
 
 # jags output already includes all years
-load("jags_output.rdata")
+load("jags_output_ex.rdata")
 
 # UNCOMMENT BELOW IF YOU WANT TO INCLUDE mHT ESTIMATES
 # # for mHT, first get list of mHT outputs in output folder
@@ -80,7 +80,7 @@ jags_output <- left_join(tau.jags, year.ID, by="year.ID") %>%
 # COMBINE ####
 
 # create a dataframe that combines the important elements of all dataframes
-results.all <- left_join(jags_output %>% select(year, EPU, JAGS, JAGS_lcl_95, JAGS_ucl_9, JAGS_lcl_50, JAGS_ucl_50),
+results.all <- left_join(jags_output %>% select(year, EPU, JAGS, JAGS_lcl_95, JAGS_ucl_95, JAGS_lcl_50, JAGS_ucl_50),
                          standard, 
                          by=c("EPU", "year"))
 
@@ -161,9 +161,9 @@ results_by_EPU = ggplot(results.long, aes(x = as.integer(year), y=estimate, fill
   # uncomment the line below if you want 50% confidence intervals as well
   # geom_linerange(aes(EPU, ymin = lcl_50, ymax = ucl_50), position = position_dodge(width = 0.3) ) +
   # Add a horizontal dotted line at the target population value
-  geom_hline(aes(yintercept=target), linetype = 2, color = 'red', size=0.5) +
+  geom_hline(aes(yintercept=target), linetype = 2, color = 'red', linewidth=0.5) +
   # Add a trendline for each set of points (colored by method)
-  geom_smooth(aes(color=model), method=lm, se=FALSE, size=0.5, position = position_dodge(width=0.3)) +
+  geom_smooth(aes(color=model), method=lm, se=FALSE, linewidth=0.5, position = position_dodge(width=0.3)) +
   # Add point estimates
   geom_point(shape=21, size=2.5, position = position_dodge(width = 0.3))+
   # ADd theme elements
