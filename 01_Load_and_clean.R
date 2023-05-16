@@ -64,6 +64,10 @@ compile_sheets <- function(filepath,type){
 
 # 1.3 LOAD DATA ####
 
+# create input and output folders if you haven't already
+dir.create("C:/Users/TBRUSH/R/SightabilityModels/input")
+dir.create("C:/Users/TBRUSH/R/SightabilityModels/output")
+
 # Set your working directory paths and survey data file path
 
 input <- "C:/Users/TBRUSH/R/SightabilityModels/input"
@@ -313,7 +317,7 @@ aug <- oper.dat %>%
   summarize(m = n()) %>%
   ungroup() %>%
   group_by(h) %>%
-  summarize(yr = yr,
+  reframe(yr = yr,
             m = m,
             m.max = max(m)) %>%
   ungroup() %>%
