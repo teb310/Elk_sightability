@@ -22,3 +22,5 @@ dat <- read_csv("input/BEI_by_EPU.txt") %>%
   summarize(area = sum(area_km))
 
 write.csv(dat, "input/EPU_areas.csv", row.names = F)
+
+rm(list = ls())
