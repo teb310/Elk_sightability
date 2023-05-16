@@ -94,3 +94,8 @@ input/example_data.xlsx
 input/beta_binom_model_elk2022.txt
 input/BEI_by_EPU.txt
 04_Results_personal.R
+input/2023_data.xlsx
+output/Elk_estimates_EPU.jpeg
+output/Elk_estimates_yearly.jpeg
+output/jags_output_ex.rdata
+output/mHT_2022.rdata
