@@ -1,5 +1,5 @@
 # Elk Sightability Analysis
-# Step 2: Modified Horowitz-Thompson Analysis
+# Step 2: Modified Horvitz-Thompson Analysis
 
 # NOTE: WE EXPECT THIS ESTIMATE TO BE LESS ACCURATE AND PRECISE THAN THE BAYESIAN (JAGS) ESTIMATE.
 # YOU CAN SKIP THIS SCRIPT IF YOU DON'T WANT THESE ESTIMATES FOR COMPARISON
@@ -36,10 +36,11 @@ if (length(new.packages))
 lapply(list.of.packages, require, character.only = TRUE)
 
 setwd("C:/Users/TBRUSH/R/SightabilityModels/input")
-load("mHT_input.rdata")
-load("other_inputs.rdata")
+name <- "2020_to_23"
+load(paste0(name, "_mHT_input.rdata"))
+load(paste0(name, "_other_inputs.rdata"))
 
-
+# mHT is run individually by year
 # Repeat below for each year you want new estimates from
 
 # Set year
@@ -88,3 +89,6 @@ setwd(output)
 save(results, file=paste0("mHT_",y,".rdata"))
 
 rm(list=ls())
+
+# Next script: 03_Bayesian_analysis.R
+# If you don't want to run the Bayesian analysis, skip to 04_Results.R
